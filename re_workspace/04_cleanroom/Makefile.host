@@ -1,0 +1,24 @@
+# Host-only build to test portable TS parsing; never a flashable firmware.
+CC ?= cc
+CFLAGS ?= -O2 -g -std=c11 -Wall -Wextra -Werror -pedantic
+CPPFLAGS += -Iinclude
+BUILD := build-host
+SOURCES := src/ts_demux.c src/fw_mem.c
+
+.PHONY: all run test clean
+all: $(BUILD)/inspect_ts $(BUILD)/test_ts_demux
+
+$(BUILD):
+	mkdir -p $@
+
+$(BUILD)/inspect_ts: host_main.c $(SOURCES) include/ts_demux.h include/fw_mem.h include/fw_types.h | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(SOURCES) host_main.c -o $@
+
+$(BUILD)/test_ts_demux: tests/test_ts_demux.c $(SOURCES) include/ts_demux.h include/fw_mem.h include/fw_types.h | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(SOURCES) tests/test_ts_demux.c -o $@
+
+test run: $(BUILD)/test_ts_demux
+	./$(BUILD)/test_ts_demux
+
+clean:
+	rm -rf $(BUILD)

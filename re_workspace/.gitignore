@@ -1,0 +1,6 @@
+# Local/vendor binary captures, test recordings and generated update files.
+inputs/
+*.bin
+*.img
+*.ts
+__pycache__/

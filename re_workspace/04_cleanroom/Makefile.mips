@@ -1,0 +1,59 @@
+# Optional freestanding MIPS32 *diagnostic* binary. NOT safe to flash.
+# Choose endian only after checking the ORIGINAL binary / Ghidra language.
+ENDIAN ?= unset
+ifeq ($(ENDIAN),big)
+CROSS ?= mips-linux-gnu-
+ENDIAN_FLAG := -EB
+else
+CROSS ?= mipsel-linux-gnu-
+ENDIAN_FLAG := -EL
+endif
+CC := $(CROSS)gcc
+OBJCOPY := $(CROSS)objcopy
+PYTHON ?= python3
+BUILD := build-mips
+CSOURCES := device_main.c src/ts_demux.c src/fw_mem.c src/hal_stub.c
+OBJECTS := $(addprefix $(BUILD)/,$(notdir $(CSOURCES:.c=.o))) $(BUILD)/startup.o
+CFLAGS := -O2 -std=c11 -Wall -Wextra -Werror -ffreestanding -fno-builtin \
+  -fno-common -fno-pic -fno-stack-protector -fno-tree-loop-distribute-patterns \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -mno-abicalls -msoft-float \
+  -mips32 -mabi=32 -G0 $(ENDIAN_FLAG) -Iinclude
+LDFLAGS := -nostdlib -static -no-pie -mno-abicalls $(ENDIAN_FLAG) \
+  -Wl,--build-id=none -Wl,-T,linker.ld -Wl,-Map,$(BUILD)/cleanroom_mips.map
+
+.DELETE_ON_ERROR:  # never leave a failed diagnostic image with a valid-looking name
+.PHONY: all check-config help clean
+all: $(BUILD)/cleanroom_mips.bin
+
+help:
+	@echo 'First verify target endian; then: make -f Makefile.mips ENDIAN=little'
+	@echo 'Or: make -f Makefile.mips ENDIAN=big CROSS=mips-linux-gnu-'
+	@echo 'This output is only a non-bootable diagnostic payload.'
+
+check-config:
+	@if [ '$(ENDIAN)' != little ] && [ '$(ENDIAN)' != big ]; then \
+	  echo 'Set ENDIAN=little or ENDIAN=big ONLY after verifying original'; exit 1; fi
+	@command -v '$(CC)' >/dev/null || { echo 'Missing $(CC): install a MIPS cross compiler'; exit 1; }
+	@command -v '$(OBJCOPY)' >/dev/null || { echo 'Missing $(OBJCOPY): install MIPS binutils'; exit 1; }
+
+$(BUILD):
+	mkdir -p $@
+
+$(BUILD)/%.o: src/%.c | $(BUILD) check-config
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/device_main.o: device_main.c | $(BUILD) check-config
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/startup.o: startup.S | $(BUILD) check-config
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/cleanroom_mips.elf: $(OBJECTS) linker.ld
+	$(CC) $(LDFLAGS) $(OBJECTS) -lgcc -o $@
+
+$(BUILD)/cleanroom_mips.bin: $(BUILD)/cleanroom_mips.elf
+	$(OBJCOPY) -O binary $< $@
+	$(PYTHON) ../tools/check_mips_build.py --elf $< --binary $@ --endian $(ENDIAN)
+
+clean:
+	rm -rf $(BUILD)
